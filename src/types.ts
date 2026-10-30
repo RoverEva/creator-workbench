@@ -26,6 +26,8 @@ export interface PublishPack {
   tags: string;
 }
 
+export type TrafficSource = "manual" | "youtube";
+
 export interface Draft {
   id: string;
   title: string;
@@ -38,6 +40,14 @@ export interface Draft {
   likes: number;
   starred: boolean;
   pack: PublishPack | null;
+  /** Traffic mode. Old drafts without this field are treated as manual. */
+  trafficSource?: TrafficSource;
+  /** Full YouTube video URL, or a bare 11-char video ID. Only used when trafficSource is youtube. */
+  videoUrl?: string;
+  /** Optional linked account (from the Accounts section) for this video. */
+  accountId?: string;
+  lastSyncedAt?: string | null;
+  syncError?: string;
   createdAt: string;
   updatedAt: string;
 }
