@@ -71,9 +71,85 @@ export interface Skill {
   starred: boolean;
 }
 
+/* ── Projects (P0): one project = one piece of content, end to end ── */
+
+export type ProjectStatus =
+  | "idea"
+  | "writing"
+  | "to-record"
+  | "editing"
+  | "ready-to-publish"
+  | "published";
+
+export type ProjectPriority = "low" | "medium" | "high";
+
+export interface ResearchItem {
+  id: string;
+  url: string;
+  source: string;
+  note: string;
+}
+
+export type AssetKind = "cover" | "raw-video" | "srt" | "final-video" | "other";
+
+/** Links + notes only. Video files are never stored in localStorage. */
+export interface AssetLink {
+  id: string;
+  kind: AssetKind;
+  url: string;
+  note: string;
+}
+
+export type PlatformKey = "x" | "douyin" | "xiaohongshu" | "tiktok" | "youtube";
+
+export type PlatformPublishStatus = "not-ready" | "ready" | "published";
+
+export interface PlatformPack {
+  title: string;
+  body: string;
+  hashtags: string;
+  coverUrl: string;
+  /** YYYY-MM-DDTHH:mm local input value, or "" */
+  scheduledTime: string;
+  status: PlatformPublishStatus;
+  /** ISO timestamp, or "" */
+  publishedTime: string;
+  publishedUrl: string;
+}
+
+export interface Project {
+  id: string;
+  title: string;
+  summary: string;
+  status: ProjectStatus;
+  /** Original draft status at migration time, kept when the mapping is inexact. */
+  legacyStatus?: string;
+  priority: ProjectPriority;
+  tags: string;
+  audience: string;
+  /** YYYY-MM-DD, or "" when unscheduled */
+  plannedDate: string;
+  research: ResearchItem[];
+  scriptZh: string;
+  scriptEn: string;
+  assets: AssetLink[];
+  platforms: Record<PlatformKey, PlatformPack>;
+  views: number;
+  likes: number;
+  starred: boolean;
+  archived: boolean;
+  /** Draft id this project was migrated from, if any. Drives idempotent migration. */
+  migratedFromDraftId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface WorkbenchData {
   ideas: Idea[];
   drafts: Draft[];
   accounts: Account[];
   skills: Skill[];
+  projects: Project[];
+  /** Draft ids already migrated into projects. Migration skips these on re-run. */
+  migratedDraftIds: string[];
 }

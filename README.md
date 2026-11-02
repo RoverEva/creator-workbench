@@ -1,21 +1,27 @@
-# Creator Workbench — 个人创作者工作台（最小可用版）
+# Creator Dashboard — 个人创作者工作台（最小可用版）
 
 [English](#english) · [中文](#中文)
 
-![Creator Workbench preview](docs/sample.png)
+![Creator Dashboard preview](docs/sample.png)
 
 ---
 
 ## English
 
-A local-first creator workbench that also works on your phone. It gathers topic ideas,
-drafts, publish packs, accounts, traffic, and skills in one place, instead of scattered documents.
+A local-first creator dashboard that also works on your phone. It gathers content projects,
+topic ideas, drafts, publish packs, accounts, traffic, and skills in one place, instead of scattered documents.
 
 The page UI itself is in English.
 
 ### What it includes (minimal on purpose)
 
-- **Ideas**: save inspiration, hooks, source links, and platforms; star an idea to move it to Drafts in one click
+- **Projects**: one project per piece of content, from idea to published — overview
+  (title, summary, status, priority, tags, audience, planned date), research links and notes,
+  Chinese and English scripts, asset links, and a per-platform publish pack for
+  X, Douyin, Xiaohongshu, TikTok, and YouTube, each with its own status and publish record.
+  List, board (`Idea → Writing → To Record → Editing → Ready to Publish → Published`),
+  and calendar views share the same project data, so a change in one view shows up in the others.
+- **Ideas**: save inspiration, hooks, source links, and platforms; star an idea to move it to Projects in one click
 - **Drafts**: write Chinese and English scripts separately, with status
   `idea → scripting → recorded → editing → final → published`
 - **Publish packs**: generated from your own script into titles / descriptions / tags.
@@ -55,8 +61,14 @@ The default quota is 10,000 units per day; one video statistics lookup costs 1 u
 
 ### Where your data lives
 
-- Workbench data lives only in your browser's `localStorage`. It does not sync across devices;
+- Dashboard data lives only in your browser's `localStorage`. It does not sync across devices;
   use “Export backup” in the sidebar to save a JSON copy of important drafts
+- **Backup and restore**: “Export backup” saves `creator-dashboard-backup-YYYY-MM-DD.json`.
+  “Import backup” reads such a file back, checks its format, and asks for confirmation before
+  replacing current data. A file that fails the check changes nothing.
+- Opening v0.4 with data from an older version migrates each draft into a project automatically
+  (one project per draft, original draft status kept on the project). The pre-migration data is
+  also snapshotted in the browser, so the upgrade can be undone by re-importing it.
 - **Your YouTube API Key is stored separately, is never included in the backup export, and is
   never sent to any server of this tool** (there is none); it goes from your browser straight to `googleapis.com`
 
@@ -105,7 +117,11 @@ If `gh` is not logged in yet, run `gh auth login` first.
 
 ### 它有什么（只留最基本的）
 
-- **选题**：记灵感、钩子、依据链接、平台，★ 后一键移到草稿
+- **项目**：一条内容一个项目，从选题到发布全流程——总览（标题、简介、状态、优先级、
+  标签、受众、计划日期）、参考链接和笔记、中英文稿、素材链接，以及 X、抖音、小红书、
+  TikTok、YouTube 五个平台各自独立的发布包（各自的状态和发布记录）。列表、看板
+  （选题 → 写稿 → 待录 → 剪辑 → 待发布 → 已发布）和日历共用同一套项目数据，一处改动处处同步
+- **选题**：记灵感、钩子、依据链接、平台，★ 后一键移到项目
 - **草稿**：中英双语分开写，状态从 `想法 → 写稿中 → 已录制 → 剪辑中 → 定稿 → 已发布`
 - **发布包**：从你自己的稿子生成标题 / 简介 / 标签，**永远是草稿**，改完再手动发布
   - 规则：有哪种语言的稿子，就生成哪种语言；缺的语言**留空，不自动翻译凑数**
@@ -139,6 +155,10 @@ If `gh` is not logged in yet, run `gh auth login` first.
 ### 数据存在哪里
 
 - 工作台数据只存在你浏览器的 `localStorage` 里。换设备不会同步；重要稿子请点侧栏「导出备份」存成 JSON
+- **备份与恢复**：「导出备份」存成 `creator-dashboard-backup-YYYY-MM-DD.json`；「导入备份」读回
+  这类文件时会先校验格式，覆盖前会请你确认，校验失败的文件不会改动现有数据
+- 用旧版数据打开 v0.4 时，每条草稿会自动迁移成一个项目（一条草稿一个项目，原始草稿状态
+  保留在项目里），迁移前的数据也会在浏览器里留一份快照，必要时可导回
 - **YouTube API Key 单独存放，不会随备份导出，也不会发给本工具的任何服务器**（本工具没有服务器）；
   Key 只在浏览器里直接发给 `googleapis.com`
 

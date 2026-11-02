@@ -1,12 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  buildBackup,
+  buildEgoPublishJob,
   buildPublishPack,
   downloadText,
+  emptyPlatforms,
   fetchYouTubeStats,
   fmt,
   loadApiKey,
   loadData,
+  parseBackup,
   parseYouTubeId,
+  projectFromDraft,
   saveApiKey,
   saveData,
   skillsToMarkdown,
@@ -14,18 +19,23 @@ import {
   today,
   uid,
 } from "./lib";
-import type { Account, Draft, Idea, Skill, Status, WorkbenchData } from "./types";
+import type { Account, Draft, Idea, Project, Skill, Status, WorkbenchData } from "./types";
+import { Board, Calendar } from "./Views";
+import { ProjectDetail, ProjectsList } from "./Projects";
 
-type Section = "ideas" | "drafts" | "accounts" | "traffic" | "skills";
+type Section = "projects" | "board" | "calendar" | "ideas" | "drafts" | "accounts" | "traffic" | "skills";
 
 
 const PLATFORMS = ["all", "douyin", "xiaohongshu", "youtube", "tiktok", "instagram", "news"];
-const EMPTY: WorkbenchData = { ideas: [], drafts: [], accounts: [], skills: [] };
+const EMPTY: WorkbenchData = { ideas: [], drafts: [], accounts: [], skills: [], projects: [], migratedDraftIds: [] };
 
 export function App() {
   const [data, setData] = useState<WorkbenchData>(() => loadData());
-  const [section, setSection] = useState<Section>("drafts");
+  const [section, setSection] = useState<Section>("projects");
   const SECTIONS: Array<{ key: Section; label: string; sub: string }> = [
+    { key: "projects", label: "Projects", sub: "List · Search · Filters" },
+    { key: "board", label: "Board", sub: "Idea → Published" },
+    { key: "calendar", label: "Calendar", sub: "Planned dates · Platform times" },
     { key: "ideas", label: "Ideas", sub: "Inspiration · Sources · Heat" },
     { key: "drafts", label: "Drafts", sub: "Bilingual · Publish packs" },
     { key: "accounts", label: "Accounts", sub: "Open homepage in one click" },
@@ -33,15 +43,32 @@ export function App() {
     { key: "skills", label: "Skill Collection", sub: "Organize · Export Markdown" },
   ];
   const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const notify = (msg: string) => {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2600);
+  };
+  const importRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => saveData(data), [data]);
 
   const update = (patch: Partial<WorkbenchData>) => setData((d) => ({ ...d, ...patch }));
   /** Functional draft updater, so sequential auto-syncs never overwrite each other's results with a stale snapshot. */
   const updateDrafts = (fn: (drafts: Draft[]) => Draft[]) => setData((d) => ({ ...d, drafts: fn(d.drafts) }));
+  const saveProject = (p: Project) =>
+    setData((d) => {
+      const exists = d.projects.some((x) => x.id === p.id);
+      return { ...d, projects: exists ? d.projects.map((x) => (x.id === p.id ? p : x)) : [p, ...d.projects] };
+    });
   const counts: Record<Section, number> = {
+    projects: data.projects.filter((p) => !p.archived).length,
+    board: data.projects.filter((p) => !p.archived).length,
+    calendar: data.projects.filter((p) => p.plannedDate).length,
     ideas: data.ideas.length,
     drafts: data.drafts.length,
     accounts: data.accounts.filter((a) => a.url).length,
@@ -49,7 +76,22 @@ export function App() {
     skills: data.skills.length,
   };
   const selectedDraft = data.drafts.find((d) => d.id === selectedDraftId) ?? null;
+  const selectedProject = data.projects.find((p) => p.id === selectedProjectId) ?? null;
   const selectedSkill = data.skills.find((s) => s.id === selectedSkillId) ?? null;
+
+  const onImportFile = async (file: File) => {
+    const text = await file.text();
+    const result = parseBackup(text);
+    if (!result.ok) {
+      alert(`Import failed: ${result.error}\n\nNothing was changed.`);
+      return;
+    }
+    if (!window.confirm("Replace ALL current data with this backup? Export a backup first — this cannot be undone.")) return;
+    setData(result.data);
+    setSelectedDraftId(null);
+    setSelectedProjectId(null);
+    notify("Backup restored ✓");
+  };
 
   return (
     <div className="layout">
@@ -69,17 +111,35 @@ export function App() {
           </button>
         ))}
         <p className="hint">
-          Flow: find ideas → write bilingual drafts → generate a publish pack (draft, edit by hand) → fill in traffic after publishing → double down on what performs.
-          Data lives only in your browser. Nothing is uploaded to any server.
+          Flow: capture ideas → run each piece as a project (idea → writing → record → edit → publish) → fill in traffic after publishing → double down on what performs.
+          Data is stored in this browser only (localStorage). Nothing is uploaded to any server. Export a backup before switching browsers or clearing site data.
         </p>
         <div className="row" style={{ marginTop: 12 }}>
           <button
             type="button"
             className="btn ghost"
-            onClick={() => downloadText("creator-workbench-backup.json", JSON.stringify(data, null, 2))}
+            onClick={() => downloadText(`creator-dashboard-backup-${new Date().toISOString().slice(0, 10)}.json`, buildBackup(data))}
           >
             Export backup
           </button>
+          <button
+            type="button"
+            className="btn ghost"
+            onClick={() => importRef.current?.click()}
+          >
+            Import backup
+          </button>
+          <input
+            ref={importRef}
+            type="file"
+            accept="application/json,.json"
+            style={{ display: "none" }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (f) void onImportFile(f);
+            }}
+          />
           <button
             type="button"
             className="btn ghost"
@@ -95,8 +155,8 @@ export function App() {
       <main>
         <div className="row" style={{ justifyContent: "space-between" }}>
           <div>
-            <h2>Creator Workbench</h2>
-            <p className="sub">Personal creator workbench · Minimal version · Text first, video second</p>
+            <h2>Creator Dashboard</h2>
+            <p className="sub">Personal creator dashboard · Projects, board &amp; calendar · Text first, video second</p>
           </div>
           <input
             aria-label="Search"
@@ -107,15 +167,44 @@ export function App() {
           />
         </div>
 
-        {section === "ideas" && <Ideas data={data} query={query} update={update} />}
+        {section === "projects" && (
+          <ProjectsList data={data} query={query} saveProject={saveProject} onOpen={setSelectedProjectId} notify={notify} />
+        )}
+        {section === "board" && (
+          <Board projects={data.projects} saveProject={saveProject} onOpen={setSelectedProjectId} notify={notify} />
+        )}
+        {section === "calendar" && (
+          <Calendar projects={data.projects} saveProject={saveProject} onOpen={setSelectedProjectId} />
+        )}
+        {section === "ideas" && <Ideas data={data} query={query} update={update} onMoveToProject={(p) => { saveProject(p); setSection("projects"); setSelectedProjectId(p.id); }} />}
         {section === "drafts" && (
-          <Drafts data={data} query={query} update={update} onOpen={setSelectedDraftId} />
+          <Drafts data={data} query={query} update={update} onOpen={setSelectedDraftId} onCreateProject={(d) => {
+            const p = projectFromDraft(d);
+            saveProject(p);
+            update({ migratedDraftIds: [...data.migratedDraftIds, d.id] });
+            setSection("projects");
+            setSelectedProjectId(p.id);
+            notify("Linked project created from draft");
+          }} />
         )}
         {section === "accounts" && <Accounts data={data} update={update} />}
         {section === "traffic" && <Traffic data={data} update={update} updateDrafts={updateDrafts} onOpen={(id) => { setSection("drafts"); setSelectedDraftId(id); }} />}
         {section === "skills" && <Skills data={data} update={update} onOpen={setSelectedSkillId} />}
       </main>
 
+      {selectedProject && (
+        <ProjectDetail
+          project={selectedProject}
+          onClose={() => setSelectedProjectId(null)}
+          onSave={(next) => saveProject(next)}
+          onDelete={() => {
+            setData((d) => ({ ...d, projects: d.projects.filter((x) => x.id !== selectedProject.id) }));
+            setSelectedProjectId(null);
+            notify("Project deleted");
+          }}
+          notify={notify}
+        />
+      )}
       {selectedDraft && (
         <DraftDetail
           draft={selectedDraft}
@@ -140,12 +229,13 @@ export function App() {
           }}
         />
       )}
+      {toast && <div className="toast" role="status">{toast}</div>}
     </div>
   );
 }
 
 /* ── Ideas ── */
-function Ideas({ data, query, update }: { data: WorkbenchData; query: string; update: (p: Partial<WorkbenchData>) => void }) {
+function Ideas({ data, query, update, onMoveToProject }: { data: WorkbenchData; query: string; update: (p: Partial<WorkbenchData>) => void; onMoveToProject: (p: Project) => void }) {
   const [platform, setPlatform] = useState("all");
   const [title, setTitle] = useState("");
   const [hook, setHook] = useState("");
@@ -199,9 +289,30 @@ function Ideas({ data, query, update }: { data: WorkbenchData; query: string; up
           <p><span className="tag">{idea.platform}</span> {idea.sourceNote}</p>
           <div className="row">
             <button type="button" className="btn" onClick={() => {
-              const draft: Draft = { id: uid(), title: idea.title, summary: idea.hook, scriptZh: "", scriptEn: "", status: "idea", keywords: "", views: 0, likes: 0, starred: idea.starred, pack: null, createdAt: today(), updatedAt: today() };
-              update({ drafts: [draft, ...data.drafts], ideas: data.ideas.filter((i) => i.id !== idea.id) });
-            }}>→ Move to Drafts</button>
+              const project: Project = {
+                id: uid(),
+                title: idea.title,
+                summary: idea.hook,
+                status: "idea",
+                priority: idea.starred ? "high" : "medium",
+                tags: "",
+                audience: "",
+                plannedDate: "",
+                research: idea.sourceNote ? [{ id: uid(), url: idea.sourceNote.startsWith("http") ? idea.sourceNote : "", source: "", note: idea.sourceNote }] : [],
+                scriptZh: "",
+                scriptEn: "",
+                assets: [],
+                platforms: emptyPlatforms(),
+                views: 0,
+                likes: 0,
+                starred: idea.starred,
+                archived: false,
+                createdAt: today(),
+                updatedAt: today(),
+              };
+              update({ ideas: data.ideas.filter((i) => i.id !== idea.id) });
+              onMoveToProject(project);
+            }}>→ Move to Projects</button>
             <button type="button" className="btn ghost" onClick={() => update({ ideas: data.ideas.map((i) => i.id === idea.id ? { ...i, starred: !i.starred } : i) })}>{idea.starred ? "Unstar ★" : "★ Star"}</button>
             <button type="button" className="btn ghost" onClick={() => { if (window.confirm("Delete this idea?")) update({ ideas: data.ideas.filter((i) => i.id !== idea.id) }); }}>Delete</button>
           </div>
@@ -212,7 +323,7 @@ function Ideas({ data, query, update }: { data: WorkbenchData; query: string; up
 }
 
 /* ── Drafts ── */
-function Drafts({ data, query, update, onOpen }: { data: WorkbenchData; query: string; update: (p: Partial<WorkbenchData>) => void; onOpen: (id: string) => void }) {
+function Drafts({ data, query, update, onOpen, onCreateProject }: { data: WorkbenchData; query: string; update: (p: Partial<WorkbenchData>) => void; onOpen: (id: string) => void; onCreateProject: (d: Draft) => void }) {
   const [filter, setFilter] = useState<"all" | "todo" | "done" | "starred">("all");
   const [title, setTitle] = useState("");
   const isDone = (d: Draft) => ["recorded", "editing", "final", "published"].includes(d.status);
@@ -259,6 +370,9 @@ function Drafts({ data, query, update, onOpen }: { data: WorkbenchData; query: s
           <p><strong>{fmt(d.views)}</strong> Views · <strong>{fmt(d.likes)}</strong> Likes</p>
           <div className="row">
             <button type="button" className="btn ghost" onClick={() => onOpen(d.id)}>Edit Chinese / English →</button>
+            {!data.projects.some((p) => p.migratedFromDraftId === d.id) && (
+              <button type="button" className="btn ghost" onClick={() => onCreateProject(d)}>Create linked project →</button>
+            )}
             <button type="button" className="btn ghost" onClick={() => update({ drafts: data.drafts.map((x) => x.id === d.id ? { ...x, starred: !x.starred } : x) })}>{d.starred ? "Unstar ★" : "★"}</button>
             {(d.scriptZh.trim() || d.scriptEn.trim()) && (
               <button type="button" className="btn" onClick={() => update({ drafts: data.drafts.map((x) => x.id === d.id ? { ...x, pack: buildPublishPack(x) } : x) })}>{d.pack ? "Regenerate publish pack" : "Generate publish pack"}</button>
@@ -456,7 +570,7 @@ function Skills({ data, update, onOpen }: { data: WorkbenchData; update: (p: Par
           }}>Create and edit</button>
         </div>
         <div className="row" style={{ marginTop: 12 }}>
-          <button type="button" className="btn ghost" onClick={() => downloadText("skills.md", skillsToMarkdown(data.skills))}>Export skills.md</button>
+          <button type="button" className="btn ghost" onClick={() => downloadText("creator-dashboard-skills.md", skillsToMarkdown(data.skills))}>Export skills.md</button>
         </div>
         <p className="note">Verify each item before exporting: do not publish unverified content. A public repo should hold only generic versions — no personal style, unverified notes, or private information.</p>
       </div>
@@ -499,8 +613,12 @@ function DraftDetail({ draft, onClose, onSave, onDelete }: { draft: Draft; onClo
 
         <h3 style={{ marginTop: 20 }}>Publish pack (draft)</h3>
         <p className="note">Rule: only the language that actually has a script gets a title and description; a missing language stays blank and is never auto-translated to fill the gap. Edit the result by hand, then publish manually — this tool never uploads to any platform.</p>
+        <p className="note">Ego Lite (local only, not in the GitHub push): this workbench does not publish by itself. The .json job above is a handoff for an ego-browser agent on a macOS/Windows machine where Ego Lite is installed and platforms are logged in. It must stop before the final publish click on each platform for your confirmation, and you attach the finished video file on that machine — the workbench stores scripts only.</p>
         <div className="row">
           <button type="button" className="btn" disabled={!d.scriptZh.trim() && !d.scriptEn.trim()} onClick={() => set({ pack: buildPublishPack(d) })}>{d.pack ? "Regenerate publish pack" : "Generate publish pack"}</button>
+          <button type="button" className="btn ghost" onClick={() => {
+            downloadText(`ego-lite-publish-${d.id}.json`, JSON.stringify(buildEgoPublishJob(d), null, 2));
+          }}>Export Ego Lite publish job (.json, local only)</button>
           {d.pack && <button type="button" className="btn ghost" onClick={() => {
             const p = d.pack!;
             const text = `$Title (Chinese): ${p.titleZh || "(blank)"}\nDescription (Chinese): ${p.descZh || "(blank)"}\nTitle (English): ${p.titleEn || "(blank)"}\nDescription (English): ${p.descEn || "(blank)"}\nTags：${p.tags}`;
